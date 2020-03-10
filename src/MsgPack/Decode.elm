@@ -1,4 +1,4 @@
-module MsgPack.Decode exposing (bool, bytes, float, int, list, null, string)
+module MsgPack.Decode exposing (bool, bytes, dict, float, int, keyValuePairs, list, null, string)
 
 {-| TODO docs
 
@@ -191,7 +191,7 @@ bytes =
 
 
 listLoop : Decoder a -> Int -> Decoder (List a)
-listLoop inner length =
+listLoop innerDecoder length =
     Decode.loop
         ( length, [] )
         (\( n, xs ) ->
@@ -199,13 +199,13 @@ listLoop inner length =
                 Decode.succeed (Done xs)
 
             else
-                inner
+                innerDecoder
                     |> Decode.map (\x -> Loop ( n - 1, x :: xs ))
         )
 
 
 list : Decoder a -> Decoder (List a)
-list inner =
+list innerDecoder =
     Decode.unsignedInt8
         |> Decode.andThen
             (\n ->
@@ -218,27 +218,67 @@ list inner =
                         length =
                             Bitwise.and 0x0F n
                     in
-                    listLoop inner length
+                    listLoop innerDecoder length
 
                 else
                     case n of
                         0xDC ->
                             Decode.unsignedInt16 BE
-                                |> Decode.andThen (listLoop inner)
+                                |> Decode.andThen (listLoop innerDecoder)
 
                         0xDD ->
                             Decode.unsignedInt32 BE
-                                |> Decode.andThen (listLoop inner)
+                                |> Decode.andThen (listLoop innerDecoder)
 
                         _ ->
                             Decode.fail
             )
 
 
+keyValuePairs : Decoder key -> Decoder value -> Decoder (List ( key, value ))
+keyValuePairs keyDecoder valueDecoder =
+    let
+        tupleDecoder : Decoder ( key, value )
+        tupleDecoder =
+            Decode.map2 Tuple.pair
+                keyDecoder
+                valueDecoder
+    in
+    Decode.unsignedInt8
+        |> Decode.andThen
+            (\n ->
+                if Bitwise.and 0xF0 n == 0x80 then
+                    -- 0xF0 ==  0b 1111 0000
+                    -- 0x80 ==  0b 1000 0000
+                    -- 0x0F ==  0b 0000 1111
+                    -- fixmap = 0b 1000 XXXX
+                    let
+                        length =
+                            Bitwise.and 0x0F n
+                    in
+                    listLoop tupleDecoder length
 
---dict :
---    Decoder comparable
---    -> Decoder value
---    -> Decoder (Dict comparable value) -- TODO are keys always strings?
+                else
+                    case n of
+                        0xDE ->
+                            Decode.unsignedInt16 BE
+                                |> Decode.andThen (listLoop tupleDecoder)
+
+                        0xDF ->
+                            Decode.unsignedInt32 BE
+                                |> Decode.andThen (listLoop tupleDecoder)
+
+                        _ ->
+                            Decode.fail
+            )
+
+
+dict : Decoder comparable -> Decoder value -> Decoder (Dict comparable value)
+dict keyDecoder valueDecoder =
+    keyValuePairs keyDecoder valueDecoder
+        |> Decode.map Dict.fromList
+
+
+
 --extension : Decoder ( Int, Bytes ) -- TODO ???
 --timestamp : Decoder Posix
