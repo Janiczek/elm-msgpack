@@ -9,6 +9,7 @@ module MsgPack.Decode exposing (bool, bytes, dict, extension, float, int, keyVal
 import Bitwise
 import Bytes exposing (Bytes, Endianness(..))
 import Bytes.Decode as Decode exposing (Decoder, Step(..))
+import Dict exposing (Dict)
 import Time exposing (Posix)
 
 
@@ -40,6 +41,34 @@ bool =
                     _ ->
                         Decode.fail
             )
+
+
+unsignedInt64 : Endianness -> Decoder Int
+unsignedInt64 endianness =
+    -- TODO in JS we're unable to represent all 64bit values, right?
+    -- TODO this is most likely wrong
+    Decode.map2
+        (\msb lsb ->
+            Bitwise.or
+                (Bitwise.shiftLeftBy 32 msb)
+                lsb
+        )
+        (Decode.unsignedInt32 endianness)
+        (Decode.unsignedInt32 endianness)
+
+
+signedInt64 : Endianness -> Decoder Int
+signedInt64 endianness =
+    -- TODO in JS we're unable to represent all 64bit values, right?
+    -- TODO this is most likely wrong
+    Decode.map2
+        (\msb lsb ->
+            Bitwise.or
+                (Bitwise.shiftLeftBy 32 msb)
+                lsb
+        )
+        (Decode.signedInt32 endianness)
+        (Decode.signedInt32 endianness)
 
 
 int : Decoder Int
@@ -78,15 +107,7 @@ int =
                             Decode.unsignedInt32 BE
 
                         0xCF ->
-                            -- TODO in JS we're unable to represent all 64bit values, right?
-                            Decode.map2
-                                (\msb lsb ->
-                                    Bitwise.or
-                                        (Bitwise.shiftLeftBy 32 msb)
-                                        lsb
-                                )
-                                (Decode.unsignedInt32 BE)
-                                (Decode.unsignedInt32 BE)
+                            unsignedInt64 BE
 
                         0xD0 ->
                             Decode.signedInt8
@@ -98,16 +119,7 @@ int =
                             Decode.signedInt32 BE
 
                         0xD3 ->
-                            -- TODO in JS we're unable to represent all 64bit values, right?
-                            -- TODO this is most likely wrong
-                            Decode.map2
-                                (\msb lsb ->
-                                    Bitwise.or
-                                        (Bitwise.shiftLeftBy 32 msb)
-                                        lsb
-                                )
-                                (Decode.signedInt32 BE)
-                                (Decode.signedInt32 BE)
+                            signedInt64 BE
 
                         _ ->
                             Decode.fail
@@ -342,5 +354,80 @@ extension =
             )
 
 
+timestamp : Decoder Posix
+timestamp =
+    Decode.unsignedInt8
+        |> Decode.andThen
+            (\n ->
+                case n of
+                    0xD6 ->
+                        Decode.map2
+                            (\type_ seconds ->
+                                if type_ == -1 then
+                                    Decode.succeed <| Time.millisToPosix (seconds * 1000)
 
---timestamp : Decoder Posix
+                                else
+                                    Decode.fail
+                            )
+                            Decode.signedInt8
+                            (Decode.unsignedInt32 BE)
+                            |> Decode.andThen identity
+
+                    0xD7 ->
+                        Decode.map3
+                            (\type_ ms32b ls32b ->
+                                -- we have to convert these two 32bit uints to:
+                                -- 30bit uint for nanoseconds
+                                -- 34bit uint for seconds
+                                if type_ == -1 then
+                                    let
+                                        --         ms32b    ls32b
+                                        --       0xFFFFFFFF FFFFFFFF
+                                        -- nano: 0xFFFFFFFC 00000000
+                                        -- secs: 0x00000003 FFFFFFFF
+                                        nanoseconds =
+                                            Bitwise.and 0xFFFFFFFC ms32b
+
+                                        seconds =
+                                            Bitwise.or
+                                                (Bitwise.shiftLeftBy 32 (Bitwise.and 0x03 ms32b))
+                                                ls32b
+                                    in
+                                    if nanoseconds <= 999999999 then
+                                        Decode.succeed <|
+                                            Time.millisToPosix (seconds * 1000 + nanoseconds // 1000)
+
+                                    else
+                                        Decode.fail
+
+                                else
+                                    Decode.fail
+                            )
+                            Decode.signedInt8
+                            (Decode.unsignedInt32 BE)
+                            (Decode.unsignedInt32 BE)
+                            |> Decode.andThen identity
+
+                    0xC7 ->
+                        Decode.map4
+                            (\length type_ nanoseconds seconds ->
+                                if length == 12 && type_ == -1 then
+                                    if nanoseconds <= 999999999 then
+                                        Decode.succeed <|
+                                            Time.millisToPosix (seconds * 1000 + nanoseconds // 1000)
+
+                                    else
+                                        Decode.fail
+
+                                else
+                                    Decode.fail
+                            )
+                            Decode.unsignedInt8
+                            Decode.signedInt8
+                            (Decode.unsignedInt32 BE)
+                            (signedInt64 BE)
+                            |> Decode.andThen identity
+
+                    _ ->
+                        Decode.fail
+            )
