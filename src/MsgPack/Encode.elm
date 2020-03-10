@@ -1,1 +1,5 @@
-module MsgPack.Encode exposing (int)
+module MsgPack.Encode exposing (null)
+
+
+null =
+    Debug.todo "Encode.null"
