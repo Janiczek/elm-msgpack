@@ -1,4 +1,4 @@
-module MsgPack.Decode exposing (bool, bytes, dict, float, int, keyValuePairs, list, null, string)
+module MsgPack.Decode exposing (bool, bytes, dict, extension, float, int, keyValuePairs, list, null, string)
 
 {-| TODO docs
 
@@ -279,6 +279,68 @@ dict keyDecoder valueDecoder =
         |> Decode.map Dict.fromList
 
 
+extension : Decoder ( Int, Bytes )
+extension =
+    Decode.unsignedInt8
+        |> Decode.andThen
+            (\n ->
+                case n of
+                    0xD4 ->
+                        Decode.map2 Tuple.pair
+                            Decode.signedInt8
+                            (Decode.bytes 1)
 
---extension : Decoder ( Int, Bytes ) -- TODO ???
+                    0xD5 ->
+                        Decode.map2 Tuple.pair
+                            Decode.signedInt8
+                            (Decode.bytes 2)
+
+                    0xD6 ->
+                        Decode.map2 Tuple.pair
+                            Decode.signedInt8
+                            (Decode.bytes 4)
+
+                    0xD7 ->
+                        Decode.map2 Tuple.pair
+                            Decode.signedInt8
+                            (Decode.bytes 8)
+
+                    0xD8 ->
+                        Decode.map2 Tuple.pair
+                            Decode.signedInt8
+                            (Decode.bytes 16)
+
+                    0xC7 ->
+                        Decode.unsignedInt8
+                            |> Decode.andThen
+                                (\length ->
+                                    Decode.map2 Tuple.pair
+                                        Decode.signedInt8
+                                        (Decode.bytes length)
+                                )
+
+                    0xC8 ->
+                        Decode.unsignedInt16 BE
+                            |> Decode.andThen
+                                (\length ->
+                                    Decode.map2 Tuple.pair
+                                        Decode.signedInt8
+                                        (Decode.bytes length)
+                                )
+
+                    0xC9 ->
+                        Decode.unsignedInt32 BE
+                            |> Decode.andThen
+                                (\length ->
+                                    Decode.map2 Tuple.pair
+                                        Decode.signedInt8
+                                        (Decode.bytes length)
+                                )
+
+                    _ ->
+                        Decode.fail
+            )
+
+
+
 --timestamp : Decoder Posix
