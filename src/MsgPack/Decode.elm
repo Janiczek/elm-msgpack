@@ -1,4 +1,4 @@
-module MsgPack.Decode exposing (bool, bytes, float, int, null, string)
+module MsgPack.Decode exposing (bool, bytes, float, int, list, null, string)
 
 {-| TODO docs
 
@@ -7,8 +7,8 @@ module MsgPack.Decode exposing (bool, bytes, float, int, null, string)
 -}
 
 import Bitwise
-import Bytes exposing (Endianness(..))
-import Bytes.Decode as Decode exposing (Decoder)
+import Bytes exposing (Bytes, Endianness(..))
+import Bytes.Decode as Decode exposing (Decoder, Step(..))
 import Time exposing (Posix)
 
 
@@ -190,8 +190,52 @@ bytes =
             )
 
 
+listLoop : Decoder a -> Int -> Decoder (List a)
+listLoop inner length =
+    Decode.loop
+        ( length, [] )
+        (\( n, xs ) ->
+            if n <= 0 then
+                Decode.succeed (Done xs)
 
---list : Decoder a -> Decoder (List a)
+            else
+                inner
+                    |> Decode.map (\x -> Loop ( n - 1, x :: xs ))
+        )
+
+
+list : Decoder a -> Decoder (List a)
+list inner =
+    Decode.unsignedInt8
+        |> Decode.andThen
+            (\n ->
+                if Bitwise.and 0xF0 n == 0x90 then
+                    -- 0xF0 ==    0b 1111 0000
+                    -- 0x90 ==    0b 1001 0000
+                    -- 0x0F ==    0b 0000 1111
+                    -- fixarray = 0b 1001 XXXX
+                    let
+                        length =
+                            Bitwise.and 0x0F n
+                    in
+                    listLoop inner length
+
+                else
+                    case n of
+                        0xDC ->
+                            Decode.unsignedInt16 BE
+                                |> Decode.andThen (listLoop inner)
+
+                        0xDD ->
+                            Decode.unsignedInt32 BE
+                                |> Decode.andThen (listLoop inner)
+
+                        _ ->
+                            Decode.fail
+            )
+
+
+
 --dict :
 --    Decoder comparable
 --    -> Decoder value
