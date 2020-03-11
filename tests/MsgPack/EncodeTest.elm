@@ -1,5 +1,7 @@
 module MsgPack.EncodeTest exposing (..)
 
+-- The "Try!" playground on the MessagePack site https://msgpack.org/ is very helpful in creating these cases
+
 import Bytes
 import Bytes.Decode as BytesDecode
 import Bytes.Decode.Extra as BytesDecode
