@@ -1,4 +1,4 @@
-module MsgPack.Encode exposing (bool, float, int, null, string)
+module MsgPack.Encode exposing (bool, bytes, float, int, null, string)
 
 import Bitwise
 import Bytes exposing (Bytes, Endianness(..))
@@ -128,4 +128,32 @@ string stringValue =
             [ Encode.unsignedInt8 0xDB
             , Encode.unsignedInt32 BE length
             , Encode.string stringValue
+            ]
+
+
+bytes : Bytes -> Encoder
+bytes bytesValue =
+    let
+        length =
+            Bytes.width bytesValue
+    in
+    if length < 2 ^ 8 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC4
+            , Encode.unsignedInt8 length
+            , Encode.bytes bytesValue
+            ]
+
+    else if length < 2 ^ 16 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC5
+            , Encode.unsignedInt16 BE length
+            , Encode.bytes bytesValue
+            ]
+
+    else
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC6
+            , Encode.unsignedInt32 BE length
+            , Encode.bytes bytesValue
             ]
