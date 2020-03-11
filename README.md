@@ -1,9 +1,14 @@
 # `Janiczek/elm-msgpack`
 
+[MsgPack](https://msgpack.org/) implementation for the Elm language.
+
 WIP :warning:
 
+### TODO
+
 - [x] encoders / decoders implemented
-- [ ] unit tests around interesting examples (particularly 64bit integers)
+- [ ] encoder unit tests around interesting examples (particularly 64bit integers)
+- [ ] decoder unit tests around interesting examples (particularly 64bit integers)
 - [ ] look at other implementations' test suites
 - [ ] roundtrip fuzz tests (value -> encode -> decode -> is the same)
 - [ ] documentation
