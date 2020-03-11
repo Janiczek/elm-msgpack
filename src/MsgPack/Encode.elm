@@ -1,4 +1,4 @@
-module MsgPack.Encode exposing (bool, bytes, float, int, null, string)
+module MsgPack.Encode exposing (bool, bytes, float, int, list, null, string)
 
 import Bitwise
 import Bytes exposing (Bytes, Endianness(..))
@@ -102,7 +102,7 @@ string stringValue =
         length =
             Encode.getStringWidth stringValue
     in
-    if length <= 31 then
+    if length < 2 ^ 5 then
         -- fixstr
         Encode.sequence
             [ Encode.unsignedInt8 <| Bitwise.or 0xA0 length
@@ -156,4 +156,34 @@ bytes bytesValue =
             [ Encode.unsignedInt8 0xC6
             , Encode.unsignedInt32 BE length
             , Encode.bytes bytesValue
+            ]
+
+
+list : (a -> Encoder) -> List a -> Encoder
+list innerEncoder listValue =
+    let
+        length =
+            List.length listValue
+    in
+    if length < 2 ^ 4 then
+        Encode.sequence
+            [ Encode.unsignedInt8 <| Bitwise.or 0x90 length
+            , List.map innerEncoder listValue
+                |> Encode.sequence
+            ]
+
+    else if length < 2 ^ 16 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xDC
+            , Encode.unsignedInt16 BE length
+            , List.map innerEncoder listValue
+                |> Encode.sequence
+            ]
+
+    else
+        Encode.sequence
+            [ Encode.unsignedInt8 0xDD
+            , Encode.unsignedInt32 BE length
+            , List.map innerEncoder listValue
+                |> Encode.sequence
             ]
