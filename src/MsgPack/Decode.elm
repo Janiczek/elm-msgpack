@@ -8,7 +8,8 @@ module MsgPack.Decode exposing (bool, bytes, dict, extension, float, int, keyVal
 
 import Bitwise
 import Bytes exposing (Bytes, Endianness(..))
-import Bytes.Decode as Decode exposing (Decoder, Step(..))
+import Bytes.Decode as Decode exposing (Decoder)
+import Bytes.Decode.Extra as Decode
 import Dict exposing (Dict)
 import Time exposing (Posix)
 
@@ -202,20 +203,6 @@ bytes =
             )
 
 
-listLoop : Decoder a -> Int -> Decoder (List a)
-listLoop innerDecoder length =
-    Decode.loop
-        ( length, [] )
-        (\( n, xs ) ->
-            if n <= 0 then
-                Decode.succeed (Done xs)
-
-            else
-                innerDecoder
-                    |> Decode.map (\x -> Loop ( n - 1, x :: xs ))
-        )
-
-
 list : Decoder a -> Decoder (List a)
 list innerDecoder =
     Decode.unsignedInt8
@@ -230,17 +217,17 @@ list innerDecoder =
                         length =
                             Bitwise.and 0x0F n
                     in
-                    listLoop innerDecoder length
+                    Decode.list length innerDecoder
 
                 else
                     case n of
                         0xDC ->
                             Decode.unsignedInt16 BE
-                                |> Decode.andThen (listLoop innerDecoder)
+                                |> Decode.andThen (\length -> Decode.list length innerDecoder)
 
                         0xDD ->
                             Decode.unsignedInt32 BE
-                                |> Decode.andThen (listLoop innerDecoder)
+                                |> Decode.andThen (\length -> Decode.list length innerDecoder)
 
                         _ ->
                             Decode.fail
@@ -268,17 +255,17 @@ keyValuePairs keyDecoder valueDecoder =
                         length =
                             Bitwise.and 0x0F n
                     in
-                    listLoop tupleDecoder length
+                    Decode.list length tupleDecoder
 
                 else
                     case n of
                         0xDE ->
                             Decode.unsignedInt16 BE
-                                |> Decode.andThen (listLoop tupleDecoder)
+                                |> Decode.andThen (\length -> Decode.list length tupleDecoder)
 
                         0xDF ->
                             Decode.unsignedInt32 BE
-                                |> Decode.andThen (listLoop tupleDecoder)
+                                |> Decode.andThen (\length -> Decode.list length tupleDecoder)
 
                         _ ->
                             Decode.fail
