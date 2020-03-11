@@ -1,8 +1,10 @@
-module MsgPack.Encode exposing (bool, bytes, float, int, list, null, string)
+module MsgPack.Encode exposing (bool, bytes, dict, extension, float, int, keyValuePairs, list, null, string, timestamp)
 
 import Bitwise
 import Bytes exposing (Bytes, Endianness(..))
 import Bytes.Encode as Encode exposing (Encoder)
+import Dict exposing (Dict)
+import Time exposing (Posix)
 
 
 null : Encoder
@@ -186,4 +188,151 @@ list innerEncoder listValue =
             , Encode.unsignedInt32 BE length
             , List.map innerEncoder listValue
                 |> Encode.sequence
+            ]
+
+
+keyValuePairs : (key -> Encoder) -> (value -> Encoder) -> List ( key, value ) -> Encoder
+keyValuePairs keyEncoder valueEncoder pairs =
+    let
+        length =
+            List.length pairs
+
+        pairEncoder ( key, value ) =
+            Encode.sequence
+                [ keyEncoder key
+                , valueEncoder value
+                ]
+    in
+    if length < 2 ^ 4 then
+        Encode.sequence
+            [ Encode.unsignedInt8 <| Bitwise.or 0x80 length
+            , List.map pairEncoder pairs
+                |> Encode.sequence
+            ]
+
+    else if length < 2 ^ 16 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xDE
+            , Encode.unsignedInt16 BE length
+            , List.map pairEncoder pairs
+                |> Encode.sequence
+            ]
+
+    else
+        Encode.sequence
+            [ Encode.unsignedInt8 0xDF
+            , Encode.unsignedInt32 BE length
+            , List.map pairEncoder pairs
+                |> Encode.sequence
+            ]
+
+
+dict : (comparable -> Encoder) -> (value -> Encoder) -> Dict comparable value -> Encoder
+dict keyEncoder valueEncoder dictValue =
+    keyValuePairs keyEncoder valueEncoder (Dict.toList dictValue)
+
+
+extension : ( Int, Bytes ) -> Encoder
+extension ( type_, bytesValue ) =
+    let
+        length =
+            Bytes.width bytesValue
+    in
+    if length == 1 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xD4
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else if length == 2 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xD5
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else if length == 4 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xD6
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else if length == 8 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xD7
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else if length == 16 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xD8
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else if length < 2 ^ 8 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC7
+            , Encode.unsignedInt8 length
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else if length < 2 ^ 16 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC8
+            , Encode.unsignedInt16 BE length
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+    else
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC9
+            , Encode.unsignedInt32 BE length
+            , Encode.signedInt8 type_
+            , Encode.bytes bytesValue
+            ]
+
+
+unsignedInt64 : Endianness -> Int -> Encoder
+unsignedInt64 endianness intValue =
+    -- TODO probably buggy?
+    Encode.sequence
+        [ Encode.unsignedInt32 endianness <| Bitwise.shiftRightZfBy 32 intValue
+        , Encode.unsignedInt32 endianness <| Bitwise.and 0xFFFFFFFF intValue
+        ]
+
+
+timestamp : Posix -> Encoder
+timestamp posix =
+    let
+        millis =
+            Time.posixToMillis posix
+    in
+    if modBy 1000 millis == 0 then
+        Encode.sequence
+            [ Encode.unsignedInt8 0xD6
+            , Encode.signedInt8 -1
+            , Encode.unsignedInt32 BE (millis // 1000)
+            ]
+
+    else
+        -- TODO we don't do the 0xD7 format, only 0xC7
+        let
+            nanoseconds =
+                modBy 1000 millis * 1000
+
+            seconds =
+                millis // 1000
+        in
+        Encode.sequence
+            [ Encode.unsignedInt8 0xC7
+            , Encode.unsignedInt8 12
+            , Encode.signedInt8 -1
+            , Encode.unsignedInt32 BE nanoseconds
+            , unsignedInt64 BE seconds
             ]
